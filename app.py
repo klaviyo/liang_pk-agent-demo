@@ -108,6 +108,22 @@ def debug_env():
     })
 
 
+@app.route('/api/debug/klaviyo', methods=['GET'])
+def debug_klaviyo():
+    """Debug endpoint to test Klaviyo API directly"""
+    try:
+        from tools import account_lookup
+        result = account_lookup.handle({})
+        return jsonify({'success': True, 'result': result})
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
 @app.route('/api/feedback', methods=['POST'])
 def feedback():
     try:
