@@ -55,8 +55,9 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let finished = false;
 
-        while (true) {
+        while (!finished) {
             const { done, value } = await reader.read();
             if (done) break;
 
@@ -73,9 +74,13 @@ async function sendMessage() {
                     } else if (data.type === 'response') {
                         removeProgressIndicator(progressId);
                         addMessage(data.text, 'agent', message);
+                        finished = true;
+                        break;
                     } else if (data.type === 'error') {
                         removeProgressIndicator(progressId);
                         addMessage('I apologize, but I encountered an error. Please try again or contact support@klaviyo.com.', 'agent');
+                        finished = true;
+                        break;
                     }
                 } catch (e) {
                     // Ignore malformed SSE chunks
