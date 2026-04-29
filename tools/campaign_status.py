@@ -27,19 +27,6 @@ def handle(input: dict) -> str:
 
             campaign_data = campaign_response['data']['attributes']
 
-            # Try to get campaign report for metrics
-            try:
-                report_response = client.Reporting.get_campaign_report(
-                    id=campaign_id,
-                    fields_campaign_send_job_response=[
-                        "status",
-                        "progress"
-                    ]
-                )
-                report_data = report_response.get('data', {}).get('attributes', {})
-            except:
-                report_data = {}
-
             result = {
                 "campaign_id": campaign_id,
                 "name": campaign_data.get('name'),
@@ -47,13 +34,13 @@ def handle(input: dict) -> str:
                 "created_at": campaign_data.get('created_at'),
                 "scheduled_at": campaign_data.get('scheduled_at'),
                 "sent_at": campaign_data.get('send_time'),
-                "metrics": report_data
+                "archived": campaign_data.get('archived')
             }
 
             return json.dumps(result, indent=2)
 
         else:
-            # List recent campaigns
+            # List recent email campaigns (filter is required by the API)
             campaigns_response = client.Campaigns.get_campaigns(
                 filter="equals(messages.channel,'email')",
                 fields_campaign=[
@@ -63,12 +50,12 @@ def handle(input: dict) -> str:
                     "created_at",
                     "scheduled_at",
                     "send_time"
-                ],
-                page_size=10
+                ]
             )
 
             campaigns = []
-            for campaign in campaigns_response.get('data', []):
+            # Return first 20 campaigns
+            for campaign in campaigns_response.get('data', [])[:20]:
                 campaigns.append({
                     "campaign_id": campaign['id'],
                     "name": campaign['attributes'].get('name'),
@@ -78,7 +65,10 @@ def handle(input: dict) -> str:
                     "sent_at": campaign['attributes'].get('send_time'),
                 })
 
-            return json.dumps({"campaigns": campaigns}, indent=2)
+            return json.dumps({
+                "campaigns": campaigns,
+                "total_returned": len(campaigns)
+            }, indent=2)
 
     except ValueError as e:
         return json.dumps({"error": str(e)})
