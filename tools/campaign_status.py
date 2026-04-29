@@ -1,71 +1,86 @@
 import json
-
-_MOCK_CAMPAIGNS = {
-    "ACC-1001": [
-        {
-            "campaign_id": "CMP-5001",
-            "name": "Holiday Promo",
-            "status": "sent",
-            "sent_at": "2025-12-20T10:00:00Z",
-            "recipients": 12450,
-            "delivered": 11732,
-            "bounced": 718,
-            "bounce_rate_pct": 5.76,
-            "opens": 3284,
-            "open_rate_pct": 27.99,
-            "clicks": 891,
-            "click_rate_pct": 7.16,
-            "spam_complaints": 24,
-            "unsubscribes": 102,
-            "errors": [
-                {"code": "550", "message": "Mailbox does not exist", "count": 543},
-                {"code": "421", "message": "Too many connections", "count": 175},
-            ],
-        },
-        {
-            "campaign_id": "CMP-5002",
-            "name": "Spring Newsletter",
-            "status": "scheduled",
-            "scheduled_for": "2026-05-01T14:00:00Z",
-            "recipients": 13100,
-            "delivered": None,
-            "errors": [],
-        },
-    ],
-    "ACC-1002": [
-        {
-            "campaign_id": "CMP-6001",
-            "name": "Q1 Re-engagement",
-            "status": "sent",
-            "sent_at": "2026-01-15T09:00:00Z",
-            "recipients": 45000,
-            "delivered": 44325,
-            "bounced": 675,
-            "bounce_rate_pct": 1.5,
-            "opens": 8865,
-            "open_rate_pct": 20.0,
-            "clicks": 2215,
-            "click_rate_pct": 5.0,
-            "spam_complaints": 12,
-            "unsubscribes": 330,
-            "errors": [],
-        },
-    ],
-}
+from tools.klaviyo_client import get_klaviyo_client
 
 
 def handle(input: dict) -> str:
-    account_id = input.get("account_id", "")
-    campaign_id = input.get("campaign_id")
+    """
+    Get campaign status and performance metrics using the Klaviyo Campaigns API.
+    Returns campaign details, delivery stats, and performance metrics.
+    """
+    try:
+        client = get_klaviyo_client()
+        campaign_id = input.get("campaign_id")
 
-    campaigns = _MOCK_CAMPAIGNS.get(account_id)
-    if not campaigns:
-        return json.dumps({"error": f"No campaigns found for account {account_id!r}"})
+        if campaign_id:
+            # Get specific campaign details
+            campaign_response = client.Campaigns.get_campaign(
+                id=campaign_id,
+                fields_campaign=[
+                    "name",
+                    "status",
+                    "archived",
+                    "created_at",
+                    "scheduled_at",
+                    "send_time"
+                ]
+            )
 
-    if campaign_id:
-        match = next((c for c in campaigns if c["campaign_id"] == campaign_id), None)
-        if not match:
-            return json.dumps({"error": f"Campaign {campaign_id!r} not found for account {account_id!r}"})
-        return json.dumps(match)
+            campaign_data = campaign_response['data']['attributes']
 
-    return json.dumps({"campaigns": campaigns})
+            # Try to get campaign report for metrics
+            try:
+                report_response = client.Reporting.get_campaign_report(
+                    id=campaign_id,
+                    fields_campaign_send_job_response=[
+                        "status",
+                        "progress"
+                    ]
+                )
+                report_data = report_response.get('data', {}).get('attributes', {})
+            except:
+                report_data = {}
+
+            result = {
+                "campaign_id": campaign_id,
+                "name": campaign_data.get('name'),
+                "status": campaign_data.get('status'),
+                "created_at": campaign_data.get('created_at'),
+                "scheduled_at": campaign_data.get('scheduled_at'),
+                "sent_at": campaign_data.get('send_time'),
+                "metrics": report_data
+            }
+
+            return json.dumps(result, indent=2)
+
+        else:
+            # List recent campaigns
+            campaigns_response = client.Campaigns.get_campaigns(
+                filter="equals(messages.channel,'email')",
+                fields_campaign=[
+                    "name",
+                    "status",
+                    "archived",
+                    "created_at",
+                    "scheduled_at",
+                    "send_time"
+                ],
+                page_size=10
+            )
+
+            campaigns = []
+            for campaign in campaigns_response.get('data', []):
+                campaigns.append({
+                    "campaign_id": campaign['id'],
+                    "name": campaign['attributes'].get('name'),
+                    "status": campaign['attributes'].get('status'),
+                    "created_at": campaign['attributes'].get('created_at'),
+                    "scheduled_at": campaign['attributes'].get('scheduled_at'),
+                    "sent_at": campaign['attributes'].get('send_time'),
+                })
+
+            return json.dumps({"campaigns": campaigns}, indent=2)
+
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    except Exception as e:
+        return json.dumps({"error": f"Failed to fetch campaign data: {str(e)}"})
