@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.1",
+  "base_commit_sha": "82488700801b52122780816b6b490268e70a0e4d",
+  "prompts": {
+    "42209c8656ab8366": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9383df65-cda2-4034-b1c9-a99360e15c33",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Liang Zhang",
+      "messages": [],
+      "total_additions": 60,
+      "total_deletions": 56,
+      "accepted_lines": 60,
+      "overriden_lines": 1
+    }
+  }
+}
