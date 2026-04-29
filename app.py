@@ -72,6 +72,9 @@ def chat_stream():
                 response = orchestrator.handle_message(user_message)
                 q.put(json.dumps({"type": "response", "text": response}))
             except Exception as e:
+                import traceback
+                error_details = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+                app.logger.error(f"Agent error: {error_details}")
                 q.put(json.dumps({"type": "error", "text": str(e)}))
             finally:
                 q.put(None)
