@@ -98,6 +98,16 @@ def chat_stream():
         return jsonify({'error': str(e), 'status': 'error'}), 500
 
 
+@app.route('/api/debug/env', methods=['GET'])
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    return jsonify({
+        'anthropic_key_set': bool(os.getenv('ANTHROPIC_API_KEY')),
+        'klaviyo_key_set': bool(os.getenv('KLAVIYO_API_KEY')),
+        'klaviyo_key_prefix': os.getenv('KLAVIYO_API_KEY', '')[:8] if os.getenv('KLAVIYO_API_KEY') else 'NOT_SET'
+    })
+
+
 @app.route('/api/feedback', methods=['POST'])
 def feedback():
     try:
