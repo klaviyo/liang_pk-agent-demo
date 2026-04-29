@@ -69,7 +69,7 @@ def chat_stream():
 
         def run_agent():
             try:
-                response = orchestrator.handle_message(user_message, progress_callback=progress_callback)
+                response = orchestrator.handle_message(user_message)
                 q.put(json.dumps({"type": "response", "text": response}))
             except Exception as e:
                 q.put(json.dumps({"type": "error", "text": str(e)}))
