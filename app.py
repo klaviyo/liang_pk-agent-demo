@@ -1,5 +1,8 @@
+import json
 import os
-from flask import Flask, render_template, request, jsonify
+import queue
+import threading
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from dotenv import load_dotenv
 from anthropic import Anthropic
@@ -48,6 +51,48 @@ def chat():
             'error': str(e),
             'status': 'error'
         }), 500
+
+
+@app.route('/api/chat/stream', methods=['POST'])
+def chat_stream():
+    try:
+        data = request.json
+        user_message = data.get('message', '').strip()
+
+        if not user_message:
+            return jsonify({'error': 'Message cannot be empty'}), 400
+
+        q = queue.Queue()
+
+        def progress_callback(step_text):
+            q.put(json.dumps({"type": "step", "text": step_text}))
+
+        def run_agent():
+            try:
+                response = orchestrator.handle_message(user_message, progress_callback=progress_callback)
+                q.put(json.dumps({"type": "response", "text": response}))
+            except Exception as e:
+                q.put(json.dumps({"type": "error", "text": str(e)}))
+            finally:
+                q.put(None)
+
+        thread = threading.Thread(target=run_agent, daemon=True)
+        thread.start()
+
+        def generate():
+            while True:
+                item = q.get()
+                if item is None:
+                    break
+                yield f"data: {item}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+        )
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 
 @app.route('/api/feedback', methods=['POST'])

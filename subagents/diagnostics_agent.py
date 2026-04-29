@@ -11,12 +11,21 @@ _DIAGNOSTICS_TOOLS = [
 _MAX_TOOL_CALLS = 10
 _REQUIRED_SECTIONS = ("**Root cause:**", "**Evidence:**", "**Recommended fix:**")
 
+_DIAGNOSTICS_STEP_LABELS = {
+    "account_lookup": "Analyzing account data...",
+    "campaign_status": "Checking campaign metrics...",
+    "check_deliverability": "Checking deliverability health...",
+    "knowledge_base_search": "Referencing help center articles...",
+}
+
 
 def validate_result(text: str) -> bool:
     return all(section in text for section in _REQUIRED_SECTIONS)
 
 
-def run(account_id: str, problem_description: str, client: Anthropic) -> str:
+def run(account_id: str, problem_description: str, client: Anthropic, progress_callback=None) -> str:
+    _emit = progress_callback if progress_callback else (lambda msg: None)
+
     messages = [
         {
             "role": "user",
@@ -67,6 +76,7 @@ def run(account_id: str, problem_description: str, client: Anthropic) -> str:
                         "is_error": True,
                     })
                 else:
+                    _emit(_DIAGNOSTICS_STEP_LABELS.get(block.name, "Investigating..."))
                     result = dispatch(block.name, block.input)
                     tool_results.append({
                         "type": "tool_result",

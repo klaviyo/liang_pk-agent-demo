@@ -38,38 +38,119 @@ async function sendMessage() {
     userInput.value = '';
     userInput.style.height = 'auto';
 
-    // Show typing indicator
-    const typingId = showTypingIndicator();
+    // Show progress indicator
+    const progressId = showProgressIndicator();
 
     try {
-        // Send to backend
-        const response = await fetch('/api/chat', {
+        const response = await fetch('/api/chat/stream', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message }),
         });
 
-        const data = await response.json();
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
 
-        // Remove typing indicator
-        removeTypingIndicator(typingId);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-        if (data.status === 'success') {
-            // Add agent response with feedback buttons
-            addMessage(data.response, 'agent', message);
-        } else {
-            addMessage('I apologize, but I encountered an error. Please try again or contact support@klaviyo.com.', 'agent');
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+
+            for (const part of parts) {
+                if (!part.startsWith('data: ')) continue;
+                try {
+                    const data = JSON.parse(part.slice(6));
+                    if (data.type === 'step') {
+                        updateProgressStep(progressId, data.text);
+                    } else if (data.type === 'response') {
+                        removeProgressIndicator(progressId);
+                        addMessage(data.text, 'agent', message);
+                    } else if (data.type === 'error') {
+                        removeProgressIndicator(progressId);
+                        addMessage('I apologize, but I encountered an error. Please try again or contact support@klaviyo.com.', 'agent');
+                    }
+                } catch (e) {
+                    // Ignore malformed SSE chunks
+                }
+            }
         }
     } catch (error) {
-        removeTypingIndicator(typingId);
+        removeProgressIndicator(progressId);
         addMessage('I apologize, but I encountered a connection error. Please check your internet connection and try again.', 'agent');
     }
 
     // Re-enable input
     setInputState(true);
     userInput.focus();
+}
+
+// Show progress indicator with agent avatar
+function showProgressIndicator() {
+    const progressId = `progress-${Date.now()}`;
+    const progressDiv = document.createElement('div');
+    progressDiv.className = 'message agent';
+    progressDiv.id = progressId;
+    progressDiv.innerHTML = `
+        <div class="agent-avatar">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="20" cy="20" r="20" fill="#1DB393"/>
+                <text x="20" y="27" font-size="20" fill="white" text-anchor="middle" font-family="Arial">K</text>
+            </svg>
+        </div>
+        <div class="message-wrapper">
+            <div class="progress-indicator">
+                <div class="progress-steps"></div>
+            </div>
+        </div>
+    `;
+    chatContainer.appendChild(progressDiv);
+    scrollToBottom();
+    return progressId;
+}
+
+// Update or add the current step, marking previous ones as completed
+function updateProgressStep(progressId, stepText) {
+    const progressDiv = document.getElementById(progressId);
+    if (!progressDiv) return;
+
+    const stepsContainer = progressDiv.querySelector('.progress-steps');
+
+    // Mark the previous active step as completed
+    const activeStep = stepsContainer.querySelector('.progress-step.active');
+    if (activeStep) {
+        activeStep.classList.remove('active');
+        activeStep.classList.add('completed');
+        const icon = activeStep.querySelector('.step-icon');
+        if (icon) {
+            icon.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 7L5.5 10.5L12 3.5" stroke="#1DB393" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>`;
+        }
+    }
+
+    // Add new active step
+    const stepDiv = document.createElement('div');
+    stepDiv.className = 'progress-step active';
+    stepDiv.innerHTML = `
+        <span class="step-icon"><div class="step-spinner"></div></span>
+        <span class="step-text">${escapeHtml(stepText)}</span>
+    `;
+    stepsContainer.appendChild(stepDiv);
+    scrollToBottom();
+}
+
+// Remove progress indicator
+function removeProgressIndicator(progressId) {
+    const el = document.getElementById(progressId);
+    if (el) el.remove();
 }
 
 // Add message to chat
@@ -128,40 +209,6 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
-}
-
-// Show typing indicator
-function showTypingIndicator() {
-    const typingId = `typing-${Date.now()}`;
-    const typingDiv = document.createElement('div');
-    typingDiv.className = 'message agent';
-    typingDiv.id = typingId;
-    typingDiv.innerHTML = `
-        <div class="agent-avatar">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" fill="#1DB393"/>
-                <text x="20" y="27" font-size="20" fill="white" text-anchor="middle" font-family="Arial">K</text>
-            </svg>
-        </div>
-        <div class="message-wrapper">
-            <div class="typing-indicator">
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-                <div class="typing-dot"></div>
-            </div>
-        </div>
-    `;
-    chatContainer.appendChild(typingDiv);
-    scrollToBottom();
-    return typingId;
-}
-
-// Remove typing indicator
-function removeTypingIndicator(typingId) {
-    const typingDiv = document.getElementById(typingId);
-    if (typingDiv) {
-        typingDiv.remove();
-    }
 }
 
 // Send feedback

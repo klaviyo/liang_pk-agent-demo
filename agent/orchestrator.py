@@ -7,6 +7,16 @@ from subagents import diagnostics_agent, validation_agent
 
 _MAX_TOOL_CALLS = 10
 
+_TOOL_STEP_LABELS = {
+    "account_lookup": "Getting your account information...",
+    "campaign_status": "Checking campaign status...",
+    "check_deliverability": "Checking email deliverability...",
+    "get_billing_info": "Getting billing information...",
+    "knowledge_base_search": "Getting references from help center...",
+    "create_ticket": "Creating support ticket...",
+    "run_diagnostics_agent": "Running diagnostics...",
+}
+
 
 class Orchestrator:
     def __init__(self, client: Anthropic):
@@ -15,7 +25,7 @@ class Orchestrator:
         self._tool_results_log: list[str] = []
         self._original_question: str = ""
 
-    def handle_message(self, user_input: str) -> str:
+    def handle_message(self, user_input: str, progress_callback=None) -> str:
         if self.state.clarification_pending:
             self.state.messages.append({
                 "role": "user",
@@ -35,10 +45,19 @@ class Orchestrator:
             self.state.tool_call_count = 0
             self.state.messages.append({"role": "user", "content": user_input})
 
-        return self._run_loop()
+        return self._run_loop(progress_callback=progress_callback)
 
-    def _run_loop(self) -> str:
+    def _run_loop(self, progress_callback=None) -> str:
+        _emit = progress_callback if progress_callback else (lambda msg: None)
+        is_first = True
+
         while True:
+            if is_first:
+                _emit("Thinking...")
+                is_first = False
+            else:
+                _emit("Analyzing your data...")
+
             response = self.client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=4096,
@@ -53,6 +72,7 @@ class Orchestrator:
             if response.stop_reason == "end_turn":
                 text_blocks = [b.text for b in response.content if hasattr(b, "text")]
                 draft = text_blocks[0] if text_blocks else "I'm sorry, I couldn't generate a response."
+                _emit("Validating response...")
                 return self._validate(draft)
 
             if response.stop_reason == "tool_use":
@@ -81,11 +101,14 @@ class Orchestrator:
                         clarification_triggered = True
                         return question
 
-                    elif block.name == "run_diagnostics_agent":
+                    _emit(_TOOL_STEP_LABELS.get(block.name, "Processing request..."))
+
+                    if block.name == "run_diagnostics_agent":
                         result = diagnostics_agent.run(
                             account_id=block.input.get("account_id", ""),
                             problem_description=block.input.get("problem_description", ""),
                             client=self.client,
+                            progress_callback=progress_callback,
                         )
                         self._tool_results_log.append(f"[diagnostics_agent]: {result}")
                         tool_results.append({
@@ -108,6 +131,7 @@ class Orchestrator:
 
                 if self.state.tool_call_count > _MAX_TOOL_CALLS:
                     draft = "I've reached the maximum number of tool calls for this request. Based on what I've gathered so far, I may not have complete information. Please try rephrasing your question or contact support directly."
+                    _emit("Validating response...")
                     return self._validate(draft)
 
     def _validate(self, draft: str) -> str:
