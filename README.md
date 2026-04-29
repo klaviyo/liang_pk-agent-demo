@@ -34,7 +34,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 python app.py
 ```
 
-Then open your browser to: http://localhost:8000
+Then open your browser to: http://localhost:3000
 
 #### CLI Version
 
